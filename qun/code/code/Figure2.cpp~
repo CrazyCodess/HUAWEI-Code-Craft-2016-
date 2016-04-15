@@ -1,0 +1,604 @@
+// Figure2.cpp : 定义控制台应用程序的入口点。
+//
+
+#include "stdafx.h"
+#include<iostream>
+#include<fstream>
+#include<vector>
+#include <iomanip>
+#include<string.h>
+#include <algorithm> 
+#include <time.h>
+#include <random> // std::default_random_engine  
+using namespace std;
+
+struct Topoinfo     //图数据类
+{
+	int m_LinkID;             //有向边索引号
+	int m_SourceID;       //有向边起点
+	int m_DestinationID; //有向边终点
+	int m_Cost;                //权重值
+};
+vector<Topoinfo> m_topoinfo;
+struct Pathinfo     //路径数据类
+{
+	int m_SourceID;       //有向边起点
+	int m_DestinationID; //有向边终点
+	vector<int> m_ReqNode;       //必过的节点集
+};
+Pathinfo m_pathinfp;
+int Node_Count = 0;               //记录输入数据中节点的个数
+int ReqNode_Count = 0;            //所需经过的点的个数
+const int Max_Node = 600;         //最大顶点个数
+vector<int> ReqNode1;             //所需经过点
+const int Max_ReqNode = 50;       //最大的必经过的点的个数
+int maxint = 99999;
+int Global_c[Max_Node][Max_Node];             //记录某个节点到任一个节点之间的权值
+int dist[Max_Node];     // 表示当前点到源点的最短路径长度
+int prev1[Max_Node];     // 记录当前点的前一个结点
+bool flag_Global = false;  //全局标志位，若得到一个较优值后就为true
+vector<int> prev_All;      //最后得到最优路径所有节点的值
+bool final = false;
+clock_t start,end_11;
+
+const int NUM=30;//粒子数
+int DIM;         //粒子的维数（待定）
+const double c1=1.8;//参数
+const double c2=1.8;//参数
+
+double xmin=0;//位置下限
+double xmax=9;//位置上限
+int gbestx[Max_ReqNode];//全局最优位置
+int gbestf;//全局最优适应度
+
+
+struct particle {//定义一个粒子
+	int x[Max_ReqNode];//当前位置矢量
+	int bestx[Max_ReqNode];//历史最优位置
+	int f;//当前适应度
+	int bestf;//历史最优适应度
+	vector<int> velocity; //速度
+}swarm[NUM];//定义粒子群*/
+
+vector<Topoinfo> topo_load();
+Pathinfo  demand_load();
+void PSO();
+void Dijkstra(int n, int v, int *dist, int *prev);
+int function1(int x[]);
+int * searchPath(int *prev,int v, int u);
+void get_rand(float *p, int n);
+
+vector<Topoinfo> topo_load(){
+	ifstream inFile;
+	vector<Topoinfo> topo;
+	Topoinfo temp;
+	char ch;
+	inFile.open("topo.csv");
+	if(!inFile.is_open())
+	{
+		cout<<"无法topo文件！";
+	}
+	while(!inFile.eof())
+	{
+		inFile>>temp.m_LinkID>>ch>>temp.m_SourceID>>ch>>
+			temp.m_DestinationID>>ch>>temp.m_Cost;
+		if (temp.m_SourceID > Node_Count)
+		{
+			Node_Count = temp.m_SourceID;
+		}
+		if (temp.m_DestinationID > Node_Count)
+		{
+			Node_Count = temp.m_DestinationID;
+		}
+		Global_c[temp.m_SourceID][temp.m_DestinationID] = temp.m_Cost;
+		topo.push_back(temp);
+	}
+	Node_Count = Node_Count + 1;
+	inFile.close();
+	return topo;
+}
+Pathinfo   demand_load(){
+	ifstream inFile;
+	Pathinfo temp;
+	int a;
+	vector<int> r;
+	char ch;
+	inFile.open("demand.csv");
+	if(!inFile.is_open())
+	{
+		cout<<"无法demand文件！";
+	}
+	inFile>>temp.m_SourceID>>ch>>temp.m_DestinationID;
+	while(!inFile.eof())
+	{
+		inFile>>ch>>a;
+		r.push_back(a);
+	}
+	ReqNode1 = r;
+	temp.m_ReqNode=r;
+	inFile.close();
+	return temp;
+}
+void PSO()
+{
+	//srand (  ( time (0) ) );
+	random_shuffle ( ReqNode1.begin(), ReqNode1.end() );
+	for (int i = 0 ; i < DIM ; i++) //初始化全局最优的位置
+	{
+		gbestx[i] = ReqNode1[i];
+	}
+	gbestf = function1(gbestx);
+	//初始化粒子群
+	for (int i = 0 ; i < NUM ; i++)  //NUM为粒子数
+	{
+		particle *p1 = &swarm[i];
+		//srand (  ( time (0) ) );
+		random_shuffle ( ReqNode1.begin(), ReqNode1.end() );
+		for (int j = 0 ; j < DIM ; j++)
+		{
+			p1->x[j] = ReqNode1[j];
+			p1->bestx[j] = ReqNode1[j];
+		}
+		p1->velocity.push_back(ReqNode1[0]);
+		p1->velocity.push_back(ReqNode1[ReqNode_Count-1]);
+		p1->f = function1(p1->x);
+		p1->bestf = maxint;
+	}
+	//开始循环迭代
+	int jishu = 0;
+	int change_pre = gbestf;
+	for (int t = 0 ; t < 400 ; t++)
+	{
+		if (gbestf == change_pre)
+		{
+			jishu++;
+		}
+		else
+		{
+			jishu = 0;
+			change_pre = gbestf;
+		}
+		if (jishu > 300)
+		{
+			break;
+		}
+		end_11 = clock();
+		if (end_11-start > 8500)
+		{
+			break;
+		}
+		for (int i = 0 ; i < NUM ; i++)
+		{
+			float w = 0.3;
+			float r1 = 0.4;
+			float r2 = 0.5;
+			int Vmax_number = ReqNode_Count*(ReqNode_Count-1);
+			int number1 = 0;                       //记录下三种学习情况下速度交换集合的个数，以便按比例删除
+			int number2 = 0;
+			int number3 = 0;
+
+			particle *p1 = &swarm[i];
+			int numV = p1->velocity.size()/2;      //当前种群中速度集合的个数/2
+			float *pV = new float[600];           //产生0-1的随机数
+			float *pr1 = new float[50];
+			float *pr2 = new float[50];
+			get_rand(pV,numV);
+			get_rand(pr1,ReqNode_Count);
+			get_rand(pr2,ReqNode_Count);
+			vector<int> m_newV;
+			for(int j = 0 ; j < p1->velocity.size() ; j = j + 2)
+			{
+				if (pV[j] < w)                      //随机数小于w保存，大于w清除
+				{
+					if (p1->velocity[j] == p1->velocity[j+1])
+					{
+						continue;
+					}
+					if (m_newV.size()!=0)
+					{
+						if ((m_newV.back()==p1->velocity[j] && m_newV[m_newV.size()-2]==p1->velocity[j+1]) || (m_newV.back()==p1->velocity[j+1] && m_newV[m_newV.size()-2]==p1->velocity[j]))
+						{
+							continue;
+						}
+					}
+
+					m_newV.push_back(p1->velocity[j]);
+					m_newV.push_back(p1->velocity[j+1]);
+				}
+			}
+			number1 = m_newV.size();
+			delete pV;
+			for (int m = 0 ; m < ReqNode_Count ; m++)
+			{
+				if (pr1[m] < r1)
+				{
+					if (p1->bestx[m] == p1->x[m])
+					{
+						m = m + 1;
+						continue;
+					}
+					if (m_newV.size()!=0)    //当前加入集合的元素不能与前一对的元素相同
+					{
+						if ((m_newV.back()==p1->bestx[m] && m_newV[m_newV.size()-2]==p1->x[m]) || (m_newV.back()==p1->x[m] && m_newV[m_newV.size()-2]==p1->bestx[m]))
+						{
+							continue;
+						}
+					}
+					m_newV.push_back(p1->bestx[m]);
+					m_newV.push_back(p1->x[m]);
+				}
+			}
+			number2 = m_newV.size()-number1;
+			delete pr1;
+			for (int k = 0 ; k < ReqNode_Count ; k++)
+			{
+				if (pr2[k] < r2)
+				{
+					if (gbestx[k] == p1->x[k])
+					{
+						k = k + 1;
+						continue;
+					}
+					if (m_newV.size()!=0)
+					{
+						if ((m_newV.back()==gbestx[k] && m_newV[m_newV.size()-2]==p1->x[k]) || (m_newV.back()==p1->x[k] && m_newV[m_newV.size()-2]==gbestx[k]))
+						{
+							continue;
+						}
+					}
+					m_newV.push_back(gbestx[k]);
+					m_newV.push_back(p1->x[k]);
+				}
+			}
+			number3 = m_newV.size()-number1-number2;
+			delete pr2;
+			if (m_newV.size() > Vmax_number)
+			{
+				int clear_number1 = (float)number1/(float)m_newV.size()*(m_newV.size()-Vmax_number);
+				int clear_number2 = (float)number2/(float)m_newV.size()*(m_newV.size()-Vmax_number);
+				int clear_number3 = (float)number3/(float)m_newV.size()*(m_newV.size()-Vmax_number);
+				if (clear_number1%2!=0)
+				{
+					clear_number1++;
+				}
+				if (clear_number2%2!=0)
+				{
+					clear_number2++;
+				}
+				if (clear_number3%2!=0)
+				{
+					clear_number3++;
+				}
+				m_newV.erase(m_newV.begin()+m_newV.size()-clear_number3,m_newV.begin()+m_newV.size());
+				m_newV.erase(m_newV.begin()+number1+number2-clear_number2,m_newV.begin()+number1+number2);
+				m_newV.erase(m_newV.begin(),m_newV.begin()+clear_number1);
+			}
+
+			p1->velocity.clear();
+			p1->velocity.assign(m_newV.begin(),m_newV.end());
+			//至此完成了速度的更新
+			//下面完成位置的更新
+			for (int h = 0 ; h < m_newV.size() ; h = h + 2)
+			{
+				int temp1 = -1;      //记录下需要交换的两个数在当前排列中的位置
+				int temp2 = -1;
+				int count = 0;
+				for (int s = 0 ; s < ReqNode_Count ; s++)
+				{
+					if (p1->x[s] == m_newV[h])
+					{
+						temp1 = s;
+						count++;
+					}
+					if (p1->x[s] == m_newV[h+1])
+					{
+						temp2 = s;
+						count++;
+					}
+					if (count == 2)
+					{
+						break;
+					}
+				}
+				int temp = p1->x[temp1];
+				p1->x[temp1] = p1->x[temp2];
+				p1->x[temp2] = temp;
+			}
+			p1->f = function1(p1->x);
+			if (p1->f < p1->bestf)       //改变当前粒子的历史最优解
+			{
+				for (int k = 0 ; k <DIM ; k++)
+				{
+					p1->bestx[k] = p1->x[k];
+				}
+				p1->bestf = p1->f;
+			}
+			if (p1->f < gbestf)         //改变全局最优解
+			{
+				for (int k = 0 ; k <DIM ; k++)
+				{
+					gbestx[k] = p1->x[k];
+				}
+				flag_Global = true;
+				gbestf = p1->f;
+				//cout<<gbestf<<endl;
+			}
+		}
+	}
+}
+void get_rand(float *p, int n)//函数功能为产生n个0-1的随机数，存储于数组p中。
+{
+	int i;
+#define N 999 //三位小数。
+	//srand(time(NULL));//设置随机数种子，使每次获取的随机序列不同。
+	for(i = 0; i < n; i ++)
+		p[i] = rand()%(N+1)/(float)(N+1);//生成0-1间的随机数。
+}
+int function1(int x[])
+{
+	//得到每一个全排列时 求中间节点之间的距离和路径
+	int dist1 = 0 ;              //对于每一个中间排列所需的最小距离
+	int dist0 = 0;               //对于每一个前面排列所需的最小距离
+	int dist2 = 0;               //对于每一个后面排列所需的最小距离
+	int temp;
+	int *path1;                  //searchPath返回的路径
+	vector<int> prev_all;        //记录所有的路径
+	vector<int> prev_mid;        //中间子集记录节点的顺序
+	prev_mid.clear();
+	prev_mid.push_back(x[0]);
+	for (int i = 0 ; i < ReqNode_Count - 1 ; i++)
+	{
+		Dijkstra(x[i+1],x[i],dist,prev1);
+		temp = dist[x[i+1]];
+		path1 = searchPath(prev1,x[i],x[i+1]);
+		int m = 0;
+		int shuzu[600];
+		while(path1[m] != x[i+1])
+		{
+			shuzu[m] = path1[m];
+			m = m + 1;
+		}
+		for (int i1 = 1 ; i1 < m ; i1++)
+		{
+			if (flag_Global == true)
+			{
+				for (int j = 0 ; j < prev_mid.size() ; j++)
+				{
+					if (prev_mid[j] == shuzu[i1])
+					{
+						return maxint;
+					}
+				}
+			}
+			prev_mid.push_back(shuzu[i1]);
+		}
+		if (flag_Global == true)
+		{
+			for (int mm = 0 ; mm < prev_mid.size() ; mm++)
+			{
+				if (prev_mid[mm] == x[i+1])
+				{
+					return maxint;
+				}
+			}
+		}
+		prev_mid.push_back(x[i+1]);
+		dist1 = dist1 + temp;
+	}
+	prev_all.assign(prev_mid.begin(),prev_mid.end());
+
+	Dijkstra(prev_mid[0],m_pathinfp.m_SourceID,dist,prev1);
+	dist0 = dist[prev_mid[0]];       //前一部分的距离
+	vector<int> prev_front;
+	prev_front.push_back(m_pathinfp.m_SourceID);
+	int number = 0;
+	prev_all.insert(prev_all.begin()+number,m_pathinfp.m_SourceID);
+	number++;
+	path1 = searchPath(prev1,m_pathinfp.m_SourceID,prev_mid[0]);
+	int m = 0;
+	int shuzu[600];
+	int hh;
+	while(path1[m]!=prev_mid[0])
+	{
+		hh = path1[m];
+		shuzu[m] = hh;
+		m = m + 1;
+	}
+	for (int i1 = 1 ; i1 < m ; i1 ++)
+	{
+		if (flag_Global == true)
+		{
+			for (int j = 0 ; j < prev_all.size() ;j++)
+			{
+				if (prev_all[j] == shuzu[i1])
+				{
+					//cout<<"\nrepeat!!!\n";
+					//return;
+					return maxint;
+				}
+			}
+		}
+		prev_front.push_back(shuzu[i1]);
+		prev_all.insert(prev_all.begin()+number,shuzu[i1]);
+		number++;
+	}
+
+
+	////////////////////////////////////////////////////////////////
+	/////////////最后一部分////////////////////////////////////////
+	////////////////////////////////////////////////////////////////
+	Dijkstra(m_pathinfp.m_DestinationID,prev_mid.back(),dist,prev1);
+	dist2 = dist[m_pathinfp.m_DestinationID];       //后一部分的距离
+	vector<int> prev_back;
+	path1 = searchPath(prev1,prev_mid.back(),m_pathinfp.m_DestinationID);
+	int m1 = 0;
+	int shuzu1[600];
+	int hh1;
+	while(path1[m1]!=m_pathinfp.m_DestinationID)
+	{
+		hh1 = path1[m1];
+		shuzu1[m1] = hh1;
+		m1 = m1 + 1;
+	}
+	shuzu1[m1++] = m_pathinfp.m_DestinationID;
+	for (int i1 = 1 ; i1 < m1 ; i1 ++)
+	{
+		// 		for (int j = 0 ; j < prev_all.size() ;j++)
+		// 		{
+		// 			if (prev_all[j] == shuzu1[i1])
+		// 			{
+		// 				//cout<<"\nrepeat!!!\n";
+		// 				//return;
+		// 				return maxint;
+		// 			}
+		// 		}
+		prev_back.push_back(shuzu1[i1]);
+		prev_all.push_back(shuzu1[i1]);
+	}
+	if (final == true)
+	{
+		prev_All.assign(prev_all.begin(),prev_all.end());
+	}
+	return (dist0+dist1+dist2);
+}
+void Dijkstra(int n, int v, int *dist, int *prev)
+{
+	bool s[Max_Node] = {0};    // 判断是否已存入该点到S集合中
+	for(int i = 0; i < Node_Count; ++i)
+	{
+		dist[i] = Global_c[v][i];
+		s[i] = 0;     // 初始都未用过该点
+		if(dist[i] == 0)
+			prev[i] = 0;
+		else
+			prev[i] = v;
+	}
+	dist[v] = 0;
+	s[v] = 1;
+	// 依次将未放入S集合的结点中，取dist[]最小值的结点，放入结合S中
+	// 一旦S包含了所有V中顶点，dist就记录了从源点到所有其他顶点之间的最短路径长度
+	for(int i = 0; i < Node_Count; ++i)
+	{
+		int tmp = 0;
+		int u = v;
+		// 找出当前未使用的点j的dist[j]最小值
+		for(int j = 0; j < Node_Count; ++j)
+			if (tmp == 0)
+			{
+				if((!s[j]) && dist[j]>tmp)
+				{
+					u = j;              // u保存当前邻接点中距离最小的点的号码
+					tmp = dist[j];
+				}
+			}
+			else
+			{
+				if((!s[j]) && dist[j]<tmp && dist[j]!=0)
+				{
+					u = j;              // u保存当前邻接点中距离最小的点的号码
+					tmp = dist[j];
+				}
+			}
+			s[u] = 1;    // 表示u点已存入S集合中
+
+			// 更新dist
+			for(int j = 0; j < Node_Count; ++j)
+				if((!s[j]) && Global_c[u][j]>0)
+				{
+					int newdist = dist[u] + Global_c[u][j];
+					if ((newdist < dist[j] && dist[j]!=0) || dist[j]==0)
+					{
+						dist[j] = newdist;
+						prev[j] = u;
+					}
+				}
+	}
+}
+int * searchPath(int *prev,int v, int u)
+{
+	int que[Max_Node];
+	int tot = 0;
+	que[tot] = u;
+	tot++;
+	int tmp = prev[u];
+	while(tmp != v)
+	{
+		que[tot] = tmp;
+		tot++;
+		tmp = prev[tmp];
+	}
+	que[tot] = v;
+	//改变顺序
+	for (int i = 0 ;i < (tot+1)/2 ; i++)
+	{
+		int temp = que[i];
+		que[i] = que[tot-i]; 
+		que[tot-i] = temp;
+	}
+	return que;
+}
+int main(int argc, char* argv[])
+{
+	
+	start = clock();
+	m_topoinfo = topo_load();
+	m_pathinfp = demand_load();
+	ReqNode_Count = m_pathinfp.m_ReqNode.size();
+	DIM = m_pathinfp.m_ReqNode.size();       //此时可知粒子维数，即必经过点的个数
+	///////使用BPSO//////////////////
+	
+	PSO();
+	clock_t hh = clock();
+// 	for(int j=0;j<DIM;j++)
+// 		std::cout<<gbestx[j]<<" "<<endl;
+//	std::cout<<gbestf<<endl;
+	final = true;
+	int cost = function1(gbestx);
+	
+	ofstream outFile("result.csv",ios::trunc);
+	
+	if (cost != maxint)
+	{
+		for (int i = 0 ; i < prev_All.size()-1 ; i++)
+		{
+			for (int j = 0 ; j < m_topoinfo.size() ; j++)
+			{
+				if (m_topoinfo[j].m_SourceID == prev_All[i] && m_topoinfo[j].m_DestinationID == prev_All[i+1])
+				{
+					int temp = m_topoinfo[j].m_LinkID;
+					char chch[255];
+					if (i == prev_All.size()-2)
+					{
+						//itoa(temp,chch,10);
+						sprintf(chch,"%d",temp);
+						outFile<<chch;
+					}
+					else
+					{
+						//itoa(temp,chch,10);
+						sprintf(chch,"%d",temp);
+						int length = strlen(chch);
+						chch[length] = '|';
+						chch[length+1] = '\0';
+						outFile<<chch;
+					}
+				}
+			}
+		}
+	}
+	else
+	{
+		char chch[10];
+		chch[0] = 'N';
+		chch[1] = 'A';
+		chch[2] = '\0';
+		outFile<<chch;
+	}
+	outFile.close();
+
+	//cout<<endl<<hh-start<<endl;
+	return 0;
+}
+
+
+

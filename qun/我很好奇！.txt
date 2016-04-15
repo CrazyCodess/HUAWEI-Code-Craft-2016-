@@ -1,0 +1,47 @@
+-千反田爱瑠
+
+大神走开！
+
+相信很多参加这个比赛的筒子都被配置环境给折腾死了，不熟悉Linux的同学伤不起啊
+因为本人是菜鸟，从来没用过Linux，所以相信很多菜鸟也和我遇到了类似的问题==
+
+如果你还在Windows下折腾。。
+
+不过，如果你是Windows下安装虚拟机的，且打算使用SDK-gcc，可以照下面流程做：
+0. 假设已经安装好了Ubuntu 12.04及其以上版本的操作系统。并且已经下载、解压好赛题包。打开终端--
+
+建议把比赛文件包(SDK-gcc)复制一份放到一个新建文件夹下面，菜鸟我就曾经因为不懂把自己的/home给删了。。
+
+1. 安装cmake。设我们安装在 /usr 文件夹下
+    1.1 32位操作系统，输入以下代码:
+		cd /usr
+		sudo wget https://cmake.org/files/v3.5/cmake-3.5.0-rc3-Linux-i386.tar.gz
+		64位操作系统，输入以下代码:
+		cd /usr
+		sudo wget https://cmake.org/files/v3.5/cmake-3.5.0-rc3-Linux-x86_64.tar.gz
+	1.2 解压(32位输入第一行，64位输入第二行):
+		sudo tar zxvf cmake-3.5.0-rc3-Linux-i386.tar.gz
+		sudo tar zxvf cmake-3.5.0-rc3-Linux-x86_64.tar.gz
+	1.3 创建连接(32位输入第一行，64位输入第二行):
+		sudo ln -s /usr/cmake-3.5.0-rc3-Linux-i386/bin/* /usr/bin/
+		sudo ln -s /usr/cmake-3.5.0-rc3-Linux-x86_64/bin/* /usr/bin/
+	1.4 输入下面的代码检查是否连接成功:
+		cmake --version
+
+2. 修改makefile文本(虽然这个文档里写了DO NOT EDIT!。。)
+	主要是修改cmake路径，没记错的话一共有4处
+	把文本里 /usr/local/bin/ 全部改为刚刚安装的cmake路径，比如32位可以将其改为
+	/usr/cmake-3.5.0-rc3-Linux-i386/bin/
+	64位则可以改为
+	/usr/cmake-3.5.0-rc3-Linux-x86_64/bin/
+
+3. 安装g++
+	Ubuntu下默认似乎没有c++的编译器，所以还得安装，在终端里输入下面的代码
+	sudo apt-get install g++
+
+4. 运行脚本，编译
+	进入你的比赛文件夹下(SDK-gcc)，然后32位操作系统输入:
+	./ batch32.sh
+	64位，则输入:
+	./ batch64.sh
+	如果中途没有报错，应该就没有问题了。
